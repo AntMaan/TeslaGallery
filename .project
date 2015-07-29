@@ -26,37 +26,32 @@
 	</natures>
 	<linkedResources>
 		<link>
-			<name>buffer.c</name>
+			<name>library/buffer.c</name>
 			<type>1</type>
 			<locationURI>PARENT-3-PROJECT_LOC/Spaghetti/Software/buffer.c</locationURI>
 		</link>
 		<link>
-			<name>buffer_printf.c</name>
+			<name>library/buffer_printf.c</name>
 			<type>1</type>
 			<locationURI>PARENT-3-PROJECT_LOC/Spaghetti/Software/buffer_printf.c</locationURI>
 		</link>
 		<link>
-			<name>pwm.c</name>
-			<type>1</type>
-			<location>E:/ti/TivaWare_C_Series-2.1.0.12573/driverlib/pwm.c</location>
-		</link>
-		<link>
-			<name>subsys.c</name>
+			<name>library/subsys.c</name>
 			<type>1</type>
 			<locationURI>PARENT-3-PROJECT_LOC/Spaghetti/Software/subsys.c</locationURI>
 		</link>
 		<link>
-			<name>task.c</name>
+			<name>library/task.c</name>
 			<type>1</type>
 			<locationURI>PARENT-3-PROJECT_LOC/Spaghetti/Software/task.c</locationURI>
 		</link>
 		<link>
-			<name>timing.c</name>
+			<name>library/timing.c</name>
 			<type>1</type>
 			<locationURI>PARENT-3-PROJECT_LOC/Spaghetti/Software/timing.c</locationURI>
 		</link>
 		<link>
-			<name>uart.c</name>
+			<name>library/uart.c</name>
 			<type>1</type>
 			<locationURI>PARENT-3-PROJECT_LOC/Spaghetti/Software/uart.c</locationURI>
 		</link>
