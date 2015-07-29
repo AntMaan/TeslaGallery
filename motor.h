@@ -22,19 +22,33 @@
  */
 void MotorsInit(void);
 void MotorsUpdate(void);
-void MotorsKillAll(void);
+void MotorsDisable(void);
+void MotorsEnable(void);
+void MotorStart(uint8_t motor_index);
+void MotorStop(uint8_t motor_index);
+void MotorsCalibrate(void);
+void MotorsReset(void);
 void Motor1Step(void);
 void Motor2Step(void);
 void Motor3Step(void);
 
-// CPU/MOTOR Configurations
-#define CLK_FREQ 80000000
-#define PWM_CLK_DIV 8
-
-#define PWM_TIMER_FREQ (CLK_FREQ/PWM_CLK_DIV) // Hz
-
-#define DEFAULT_RATE 1000
+#define DEFAULT_RATE .01
 #define MIN_PERIOD 65535
+
+#define MOTOR1_DIR_PORT GPIO_PORTC_BASE
+#define MOTOR1_DIR_PIN GPIO_PIN_5
+#define MOTOR1_STEP_PORT GPIO_PORTC_BASE
+#define MOTOR1_STEP_PIN GPIO_PIN_4
+
+#define MOTOR2_DIR_PORT GPIO_PORTD_BASE
+#define MOTOR2_DIR_PIN GPIO_PIN_1
+#define MOTOR2_STEP_PORT GPIO_PORTD_BASE
+#define MOTOR2_STEP_PIN GPIO_PIN_0
+
+#define MOTOR3_DIR_PORT GPIO_PORTA_BASE
+#define MOTOR3_DIR_PIN GPIO_PIN_6
+#define MOTOR3_STEP_PORT GPIO_PORTA_BASE
+#define MOTOR3_STEP_PIN GPIO_PIN_7
 
 typedef enum  {
 	MOTOR1 = 0,
@@ -43,58 +57,26 @@ typedef enum  {
 	NUM_MOTORS
 } motor_index_t;
 
-#define UP 0
-#define DOWN (~0)
+#define UP (~0)
+#define DOWN 0
 
 typedef struct {
-	uint32_t pwm_base_module;
-	uint32_t pwm_generator;
-	uint32_t pwm_genFault;
-	uint32_t pwm_interrupt;
-	uint32_t pwm_pin;
-	uint32_t dir_port;
-	uint8_t dir_pin;
-} motor_config_t;
-
-typedef struct {
-	uint32_t period;
+	uint32_t timerVal;
 	uint8_t direction;
-	uint16_t accelRate;
-	uint16_t deccelRate;
-	int16_t steps;
+	float accelRate;
+	float deccelRate;
+	int32_t steps;
+	int32_t cal_steps;
 } motor_control_t;
 
-// Define config information for the motors
-static motor_config_t motor_config[NUM_MOTORS] = {
-	{// Motor 1
-		PWM0_BASE,
-		PWM_GEN_3,
-		PWM_INT_GEN_3,
-		INT_PWM0_3,
-		PWM_OUT_6,
-		MOTOR1_DIR_PORT,
-		MOTOR1_DIR_PIN
-	},
-	{// Motor 2
-		PWM1_BASE,
-		PWM_GEN_0,
-		PWM_INT_GEN_0,
-		INT_PWM0_0,
-		PWM_OUT_0,
-		MOTOR2_DIR_PORT,
-		MOTOR2_DIR_PIN
-	},
-	{// Motor 3
-		PWM1_BASE,
-		PWM_GEN_1,
-		PWM_INT_GEN_1,
-		INT_PWM1_1,
-		PWM_OUT_3,
-		MOTOR3_DIR_PORT,
-		MOTOR3_DIR_PIN
-	}
-};
+typedef enum {
+	NORMAL = 0,
+	CAL,
+	RESET,
+	DISABLED
+} motorState_t;
 
 extern motor_control_t motors[NUM_MOTORS];
+extern motorState_t motorState;
 
 #endif /* MOTOR_H_ */

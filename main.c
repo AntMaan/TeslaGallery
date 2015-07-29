@@ -12,14 +12,14 @@
 #include "midi.h"
 #include "motor.h"
 #include "major.h"
+#include "limits.h"
 
 version_t TESLA_VERSION;
 
-void MotorStepTest(void);
-
 void main (void){
 
-	SysCtlClockSet(SYSCTL_SYSDIV_10 | SYSCTL_USE_PLL | SYSCTL_OSC_INT | SYSCTL_OSC_MAIN);
+	// Set the clock to 40MHz
+	SysCtlClockSet(SYSCTL_SYSDIV_5 | SYSCTL_USE_PLL | SYSCTL_XTAL_16MHZ |SYSCTL_OSC_MAIN);
 
 	TESLA_VERSION.word = 0x14081000LU;
 
@@ -37,8 +37,7 @@ void main (void){
 	MidiInit();
 	SensorInit();
 	MajorInit();
-
-	GPIOPinTypeGPIOOutput(GPIO_PORTC_BASE, GPIO_PIN_7);
+	LimitsInit();
 
 	SubsystemInit(TESLA, MESSAGE, "TESLA", TESLA_VERSION);
 
@@ -46,37 +45,11 @@ void main (void){
 
 	RegisterReceiverUART1(ProcessMidi);
 
-	TaskScheduleAdd(MotorsUpdate, TASK_MEDIUM_PRIORITY, 100, 10);
 	TaskScheduleAdd(MidiChannelUpdate, TASK_LOW_PRIORITY, 100, 1000);
-
-	MotorStepTest();
 
 	while(1){
 		SystemTick();
+		// We want to do this as often as possible without doing it every step
+		LimitsCheck();
 	}
 }
-
-void MotorStepTest(void){
-
-	motors[MOTOR1].period = 10000;
-	motors[MOTOR1].direction = UP;
-
-	WaitMs(250);
-	motors[MOTOR1].period = 0;
-
-	WaitMs(1000);
-
-	LogMsg(TESLA, MESSAGE, "Motor 1 Steps %d", motors[MOTOR1].steps);
-
-	motors[MOTOR1].period = 10000;
-	motors[MOTOR1].direction = DOWN;
-
-	WaitMs(150);
-	motors[MOTOR1].period = 0;
-
-	WaitMs(1000);
-
-	LogMsg(TESLA, MESSAGE, "Motor 1 Steps %d", motors[MOTOR1].steps);
-
-}
-

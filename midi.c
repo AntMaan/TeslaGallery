@@ -11,12 +11,13 @@
 
 #include "inc/hw_memmap.h"
 #include "driverlib/gpio.h"
-#include "int_def.h"
 
-#define slope -59.5238
-#define y_int 9000
+#define slope -70
+//#define slope -100
+//#define y_int 12000
+#define y_int 9250
 
-static inline calc_period(char velocity) {return (uint32_t)velocity*slope + y_int;}
+static inline calc_period(char velocity) {return (uint32_t)(velocity*slope + y_int);}
 
 typedef struct {
 	char note;
@@ -25,9 +26,9 @@ typedef struct {
 
 enum {
 	IDLE = 0,
-	CONTROL_BYTE_RECEIVED,
-	NOTE_RECEIVED
-} midi_msg_states;
+	WAITING_FOR_NOTE,
+	WAITING_FOR_VELOCITY
+} midi_msg_state;
 
 version_t MIDI_VERSION;
 
@@ -66,122 +67,169 @@ void ProcessMidi(char midi_char) {
 
 //	LogMsg(MIDI, MESSAGE, "Character Received: 0x%x", midi_char);
 
-	switch (midi_msg_states){
-		case IDLE:
-			// Check to make sure we just received a control byte for this device's channel
-			if( (midi_char & 0x80) && ((midi_char & 0x0F) == channel.b) ){
-				messageType = midi_char & 0xF0;
-				midi_msg_states = CONTROL_BYTE_RECEIVED;
-			}
-			break;
-		case CONTROL_BYTE_RECEIVED:
+	if(midi_char == 0xFE) return;
+
+	// If the MSB is a 1, this is the start of a MIDI message and it's a control byte
+	if(midi_char & 0x80){
+		// If the message is for this channel
+		if((midi_char & 0x0F) == channel.b){
+			messageType = midi_char & 0xF0;
+			midi_msg_state = WAITING_FOR_NOTE;
+		} else {
+			midi_msg_state = IDLE;
+		}
+		return;
+	}
+
+	switch (midi_msg_state){
+		case WAITING_FOR_NOTE:
 			noteEvent.note = midi_char;
-			midi_msg_states = NOTE_RECEIVED;
+			midi_msg_state = WAITING_FOR_VELOCITY;
 			break;
-		case NOTE_RECEIVED:
+		case WAITING_FOR_VELOCITY:
 			noteEvent.velocity = midi_char;
-			midi_msg_states = IDLE;
+			// Set the state back to WAITING_FOR_NOTE in case the message has more than one note control
+			// If this was the end of the message, the info will automatically be fixed if a message with
+			// MSB 1 is received
+			midi_msg_state = WAITING_FOR_NOTE;
 			switch(messageType){
 				case NOTE_ON:
 					switch(noteEvent.note){
 						case C3:
-							if(noteEvent.velocity == 0){
-								motors[MOTOR1].period = noteEvent.velocity;
+							if(motorState == NORMAL){
+								if(noteEvent.velocity == 0){
+									motors[MOTOR1].timerVal = 65536;
+								}
+								else{
+									motors[MOTOR1].timerVal = calc_period(noteEvent.velocity);
+								}
+								motors[MOTOR1].direction = UP;
+								GPIOPinWrite(MOTOR1_DIR_PORT, MOTOR1_DIR_PIN, motors[MOTOR1].direction);
+								MotorStart(MOTOR1);
 							}
-							else{
-								motors[MOTOR1].period = calc_period(noteEvent.velocity);
-							}
-							motors[MOTOR1].direction = UP;
 							break;
 						case B2:
-							if(noteEvent.velocity == 0){
-								motors[MOTOR1].period = noteEvent.velocity;
+							if(motorState == NORMAL){
+								if(noteEvent.velocity == 0){
+									motors[MOTOR1].timerVal = 65536;
+								}
+								else{
+									motors[MOTOR1].timerVal = calc_period(noteEvent.velocity);
+								}
+								motors[MOTOR1].direction = DOWN;
+								GPIOPinWrite(MOTOR1_DIR_PORT, MOTOR1_DIR_PIN, motors[MOTOR1].direction);
+								MotorStart(MOTOR1);
 							}
-							else{
-								motors[MOTOR1].period = calc_period(noteEvent.velocity);
-							}
-							motors[MOTOR1].direction = DOWN;
 							break;
 						case F3:
-							if(noteEvent.velocity == 0){
-								motors[MOTOR2].period = noteEvent.velocity;
+							if(motorState == NORMAL){
+								if(noteEvent.velocity == 0){
+									motors[MOTOR2].timerVal = 65536;
+								}
+								else{
+									motors[MOTOR2].timerVal = calc_period(noteEvent.velocity);
+								}
+								motors[MOTOR2].direction = UP;
+								GPIOPinWrite(MOTOR2_DIR_PORT, MOTOR2_DIR_PIN, motors[MOTOR2].direction);
+								MotorStart(MOTOR2);
 							}
-							else{
-								motors[MOTOR2].period = calc_period(noteEvent.velocity);
-							}
-							motors[MOTOR2].direction = UP;
 							break;
 						case E3:
-							if(noteEvent.velocity == 0){
-								motors[MOTOR2].period = noteEvent.velocity;
+							if(motorState == NORMAL){
+								if(noteEvent.velocity == 0){
+									motors[MOTOR2].timerVal = 65536;
+								}
+								else{
+									motors[MOTOR2].timerVal = calc_period(noteEvent.velocity);
+								}
+								motors[MOTOR2].direction = DOWN;
+								GPIOPinWrite(MOTOR2_DIR_PORT, MOTOR2_DIR_PIN, motors[MOTOR2].direction);
+								MotorStart(MOTOR2);
 							}
-							else{
-								motors[MOTOR2].period = calc_period(noteEvent.velocity);
-							}
-							motors[MOTOR2].direction = DOWN;
 							break;
 						case C4:
-							if(noteEvent.velocity == 0){
-								motors[MOTOR3].period = noteEvent.velocity;
+							if(motorState == NORMAL){
+								if(noteEvent.velocity == 0){
+									motors[MOTOR3].timerVal = 65536;
+								}
+								else{
+									motors[MOTOR3].timerVal = calc_period(noteEvent.velocity);
+								}
+								motors[MOTOR3].direction = UP;
+								GPIOPinWrite(MOTOR3_DIR_PORT, MOTOR3_DIR_PIN, motors[MOTOR3].direction);
+								MotorStart(MOTOR3);
 							}
-							else{
-								motors[MOTOR3].period = calc_period(noteEvent.velocity);
-							}
-							motors[MOTOR3].direction = UP;
 							break;
 						case B3:
-							if(noteEvent.velocity == 0){
-								motors[MOTOR3].period = noteEvent.velocity;
+							if(motorState == NORMAL){
+								if(noteEvent.velocity == 0){
+									motors[MOTOR3].timerVal = 65536;
+								}
+								else{
+									motors[MOTOR3].timerVal = calc_period(noteEvent.velocity);
+								}
+								motors[MOTOR3].direction = DOWN;
+								GPIOPinWrite(MOTOR3_DIR_PORT, MOTOR3_DIR_PIN, motors[MOTOR3].direction);
+								MotorStart(MOTOR3);
 							}
-							else{
-								motors[MOTOR3].period = calc_period(noteEvent.velocity);
-							}
-							motors[MOTOR3].direction = DOWN;
 							break;
 						case C5:
-							MotorsKillAll();
+							MotorsDisable();
 							break;
 						case D5:
-
+							if(motorState == DISABLED){
+								MotorsEnable();
+							}
 							break;
-
 						case E5:
-
+							if(motorState == NORMAL){
+								MotorsCalibrate();
+							}
 							break;
+						case F5:
+							if(motorState == NORMAL){
+								MotorsReset();
+							}
 						default:
-							midi_msg_states = IDLE;
 							break;
 					}
 					break;
 			case NOTE_OFF:
-				switch(noteEvent.note){
-					case C3:
-						motors[MOTOR1].period = 0;
-						motors[MOTOR1].direction = UP;
-						break;
-					case B2:
-						motors[MOTOR1].period = 0;
-						motors[MOTOR1].direction = DOWN;
-						break;
-					case F3:
-						motors[MOTOR2].period = 0;
-						motors[MOTOR2].direction = UP;
-						break;
-					case E3:
-						motors[MOTOR2].period = 0;
-						motors[MOTOR2].direction = DOWN;
-						break;
-					case C4:
-						motors[MOTOR3].period = 0;
-						motors[MOTOR3].direction = UP;
-						break;
-					case B3:
-						motors[MOTOR3].period = 0;
-						motors[MOTOR3].direction = DOWN;
-						break;
-					default:
-						midi_msg_states = IDLE;
-						break;
+				if(motorState == NORMAL){
+					switch(noteEvent.note){
+						case C3:
+							motors[MOTOR1].timerVal = 65536;
+							motors[MOTOR1].direction = UP;
+							GPIOPinWrite(MOTOR1_DIR_PORT, MOTOR1_DIR_PIN, motors[MOTOR1].direction);
+							break;
+						case B2:
+							motors[MOTOR1].timerVal = 65536;
+							motors[MOTOR1].direction = DOWN;
+							GPIOPinWrite(MOTOR1_DIR_PORT, MOTOR1_DIR_PIN, motors[MOTOR1].direction);
+							break;
+						case F3:
+							motors[MOTOR2].timerVal = 65536;
+							motors[MOTOR2].direction = UP;
+							GPIOPinWrite(MOTOR2_DIR_PORT, MOTOR2_DIR_PIN, motors[MOTOR2].direction);
+							break;
+						case E3:
+							motors[MOTOR2].timerVal = 65536;
+							motors[MOTOR2].direction = DOWN;
+							GPIOPinWrite(MOTOR2_DIR_PORT, MOTOR2_DIR_PIN, motors[MOTOR2].direction);
+							break;
+						case C4:
+							motors[MOTOR3].timerVal = 65536;
+							motors[MOTOR3].direction = UP;
+							GPIOPinWrite(MOTOR3_DIR_PORT, MOTOR3_DIR_PIN, motors[MOTOR3].direction);
+							break;
+						case B3:
+							motors[MOTOR3].timerVal = 65536;
+							motors[MOTOR3].direction = DOWN;
+							GPIOPinWrite(MOTOR3_DIR_PORT, MOTOR3_DIR_PIN, motors[MOTOR3].direction);
+							break;
+						default:
+							break;
+					}
 				}
 				break;
 			}

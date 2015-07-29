@@ -22,21 +22,14 @@
 #define PERIPHERAL_CLOCK SysCtlClockGet()
 #define SYSTEM_CLOCK SysCtlClockGet()
 
-#define MOTOR1_DIR_PORT GPIO_PORTC_BASE
-#define MOTOR1_DIR_PIN GPIO_PIN_5
-
-#define MOTOR2_DIR_PORT GPIO_PORTD_BASE
-#define MOTOR2_DIR_PIN GPIO_PIN_1
-
-#define MOTOR3_DIR_PORT GPIO_PORTA_BASE
-#define MOTOR3_DIR_PIN GPIO_PIN_6
-
 // subsytem enumeration needed for the subsys module
 enum sys_index {
     SYSTEM = 0,
     TESLA,
     MIDI,
+    MOTOR,
     SENSOR,
+    LIMITS,
     // ADD SUBSYSTEMS BELOW //
     // ADD SUBSYSTEMS ABOVE //
     UNKNOWN
@@ -47,6 +40,8 @@ enum sys_index {
 #define UART0_BAUD 115200
 #define USE_UART1
 #define UART1_BAUD 31250
+#define UART_RX_BUFFER_LENGTH 128
+#define UART_TX_BUFFER_LENGTH 256
 
 #define LOG_BUF &tx0
 

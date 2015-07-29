@@ -16,162 +16,512 @@
 #include <driverlib/pwm.h>
 #include <driverlib/sysctl.h>
 #include <driverlib/interrupt.h>
+#include <driverlib/eeprom.h>
 
 #include <inc/hw_gpio.h>
 #include <inc/hw_types.h>
 
 #include "motor.h"
 #include "timing.h"
+#include "subsys.h"
+#include "limits.h"
 
-#define NEW_PERIOD_INCREASING (currentPeriod + motors[i].deccelRate)
-
-#define NEW_PERIOD_DECREASING (currentPeriod - motors[i].accelRate)
-
-#define PIN_MASK (1 << (0x0000000F & motor_config[i].pwm_pin))
-
+version_t MOTOR_VERSION;
 
 motor_control_t motors[NUM_MOTORS];
 
+motorState_t motorState;
+
+#define CAL_RATE 2500
+#define RESET_RATE 2500
+
+#define EE_ADDR_MOTOR1 0x0000
+#define EE_ADDR_MOTOR2 0x0004
+#define EE_ADDR_MOTOR3 0x0008
+#define EE_ADDR_CALFLAG 0x0064
+
+#define EE_CALFLAG_SET 0xFADE
+
 void MotorsInit(void){
 
-	// Allow access to both PWM module registers
-	SysCtlPeripheralEnable(SYSCTL_PERIPH_PWM0);
-	SysCtlPeripheralEnable(SYSCTL_PERIPH_PWM1);
+	uint32_t calFlag;
 
-	// Configure the outputs for PWM output
-	GPIOPinConfigure(GPIO_PC4_M0PWM6);
-	GPIOPinConfigure(GPIO_PD0_M1PWM0);
-	GPIOPinConfigure(GPIO_PA7_M1PWM3);
-	GPIOPinConfigure(GPIO_PB6_M0PWM0);
+	MOTOR_VERSION.word = 0x14081000LU;
 
-	GPIOPinTypePWM(GPIO_PORTA_BASE, GPIO_PIN_7);
-	GPIOPinTypePWM(GPIO_PORTB_BASE, GPIO_PIN_6);
-	GPIOPinTypePWM(GPIO_PORTC_BASE, GPIO_PIN_4);
-	GPIOPinTypePWM(GPIO_PORTD_BASE, GPIO_PIN_0);
+	motorState = NORMAL;
 
-	/* PF0 requires unlocking before configuration */
-	HWREG(GPIO_PORTF_BASE + GPIO_O_LOCK) = GPIO_LOCK_KEY;
-	HWREG(GPIO_PORTF_BASE + GPIO_O_CR) |= GPIO_PIN_0;
-	GPIOPinConfigure(GPIO_PF0_M1PWM4);
-	GPIOPinTypePWM(GPIO_PORTF_BASE, GPIO_PIN_0);
-	HWREG(GPIO_PORTF_BASE + GPIO_O_LOCK) = GPIO_LOCK_M;
+	// Allow access to peripheral registers
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER2);
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER3);
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER4);
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_EEPROM0);
+
+	// Setup our step pins as outputs
+	GPIOPinTypeGPIOOutput(GPIO_PORTA_BASE, GPIO_PIN_7);
+	GPIOPinTypeGPIOOutput(GPIO_PORTC_BASE, GPIO_PIN_4);
+	GPIOPinTypeGPIOOutput(GPIO_PORTD_BASE, GPIO_PIN_0);
 
 	// Configure the direction pins as outputs
+	GPIOPinTypeGPIOOutput(GPIO_PORTA_BASE, GPIO_PIN_6);
 	GPIOPinTypeGPIOOutput(GPIO_PORTC_BASE, GPIO_PIN_5);
 	GPIOPinTypeGPIOOutput(GPIO_PORTD_BASE, GPIO_PIN_1);
-	GPIOPinTypeGPIOOutput(GPIO_PORTA_BASE, GPIO_PIN_6);
 
-	SysCtlPWMClockSet(SYSCTL_PWMDIV_8);
+	// Configure the timers for one-shot
+	TimerConfigure(TIMER2_BASE, TIMER_CFG_SPLIT_PAIR | TIMER_CFG_A_ONE_SHOT);
+	TimerConfigure(TIMER3_BASE, TIMER_CFG_SPLIT_PAIR | TIMER_CFG_A_ONE_SHOT);
+	TimerConfigure(TIMER4_BASE, TIMER_CFG_SPLIT_PAIR | TIMER_CFG_A_ONE_SHOT);
+
+	// Set the prescaler for the timers
+	TimerPrescaleSet(TIMER2_BASE, TIMER_A, 1);
+	TimerPrescaleSet(TIMER3_BASE, TIMER_A, 1);
+	TimerPrescaleSet(TIMER4_BASE, TIMER_A, 1);
+
+	// Make sure the interrupts are clear
+	TimerIntClear(TIMER2_BASE, TIMER_TIMA_TIMEOUT);
+	TimerIntClear(TIMER3_BASE, TIMER_TIMA_TIMEOUT);
+	TimerIntClear(TIMER4_BASE, TIMER_TIMA_TIMEOUT);
+
+	TimerIntRegister(TIMER2_BASE, TIMER_A, Motor1Step);
+	TimerIntRegister(TIMER3_BASE, TIMER_A, Motor2Step);
+	TimerIntRegister(TIMER4_BASE, TIMER_A, Motor3Step);
+
+	//Enable the timeout interrupt on each timer
+	TimerIntEnable(TIMER2_BASE, TIMER_TIMA_TIMEOUT);
+	TimerIntEnable(TIMER3_BASE, TIMER_TIMA_TIMEOUT);
+	TimerIntEnable(TIMER4_BASE, TIMER_TIMA_TIMEOUT);
+
+	EEPROMInit();
 
 	uint8_t i;
-	for(i=0; i < NUM_MOTORS; i++){
-		motors[i].deccelRate = DEFAULT_RATE;
-		motors[i].accelRate = DEFAULT_RATE;
-		motors[i].direction = UP;
-		motors[i].period = 1;
-		motors[i].steps = 0;
-		PWMGenConfigure(motor_config[i].pwm_base_module, motor_config[i].pwm_generator, PWM_GEN_MODE_DOWN | PWM_GEN_MODE_DB_SYNC_LOCAL | PWM_GEN_MODE_DBG_RUN);
-		PWMGenPeriodSet(motor_config[i].pwm_base_module, motor_config[i].pwm_generator, motors[i].period);
-		PWMPulseWidthSet(motor_config[i].pwm_base_module, motor_config[i].pwm_pin, motors[i].period/2);
-		PWMGenIntClear(motor_config[0].pwm_base_module, motor_config[0].pwm_generator, PWM_INT_CNT_ZERO);
-		PWMGenIntTrigEnable(motor_config[i].pwm_base_module, motor_config[i].pwm_generator, PWM_INT_CNT_ZERO);
-		PWMIntEnable(motor_config[i].pwm_base_module, motor_config[i].pwm_genFault);
-		IntEnable(motor_config[i].pwm_interrupt);
-		PWMGenEnable(motor_config[i].pwm_base_module, motor_config[i].pwm_generator);
-		PWMOutputState(motor_config[i].pwm_base_module, PIN_MASK, 0);
+    for(i=0; i < NUM_MOTORS; i++){
+        motors[i].deccelRate = DEFAULT_RATE;
+        motors[i].accelRate = DEFAULT_RATE;
+        motors[i].direction = UP;
+        motors[i].timerVal = 65536;
+        motors[i].steps = 0;
+        // Add logic to read from EEPROM on the condition that the calibrated flag is set in EEPROM
+        EEPROMRead(&calFlag, EE_ADDR_CALFLAG, 4);
+        if(calFlag == EE_CALFLAG_SET){
+        	EEPROMRead((uint32_t *) &motors[i].cal_steps, i * 4, 4);
+        } else {
+        	motors[i].cal_steps = -1;
+        }
+    }
+
+	// Register a subsystem for logging LIMITS messages
+	SubsystemInit(MOTOR, MESSAGE, "MOTOR", MOTOR_VERSION);
+}
+
+
+/**
+ * 	@brief 		Routine to find the calibration values for all of the motors
+ * 				The calibration values are the number of steps for each motor
+ * 				that the actuator can travel before hitting the limit switch.
+ * 				This routine assumes that the motor is in the desired "lowest
+ * 				point" when the routine is called.
+ *
+ * 				This routine moves all motors "UP" until the limit switch for
+ * 				that actuator is pressed, counting the number of steps to
+ * 				travel to the limit switch.  These values are recorded and
+ * 				written to memory to be used by the reset sequence to eliminate
+ * 				drift that may accumulate over time.
+ *
+ * 				Note:  As this routine requires manual setup, it should only
+ * 				be called when the designated Calibrate MIDI message has been
+ * 				received
+ *
+ * 	@param[in]	None
+ * 	@return		None
+ */
+void MotorsCalibrate(void){
+
+	uint8_t motor_index;
+	uint8_t limit_state;
+	uint32_t calFlag;
+
+	motorState = CAL;
+
+	// Make sure that all motors are off
+	for(motor_index = 0; motor_index < NUM_MOTORS; motor_index++){
+		if(motors[motor_index].timerVal != 65536){
+			LogMsg(MOTOR, MESSAGE, "Can't calibrate, motors are active!");
+			motorState = NORMAL;
+			return;
+		}
+	}
+
+	// Check to make sure none of the limits are already hit
+	limit_state = LimitsCheck();
+	if(limit_state){
+		LogMsg(MOTOR, MESSAGE, "Can't calibrate, one of the limit switches is already pressed!");
+		motorState = NORMAL;
+		return;
+	}
+
+	// Reset all motor step counts and set the direction and rate
+	for(motor_index = 0; motor_index < NUM_MOTORS; motor_index++){
+		motors[motor_index].steps = 0;
+		motors[motor_index].cal_steps = -1;
+		if(motor_index == MOTOR1){
+			motors[motor_index].direction = DOWN;
+		} else {
+			motors[motor_index].direction = UP;
+		}
+		motors[motor_index].timerVal = CAL_RATE;
+	}
+
+	// Make sure all of the direction pins represent the motor state
+	GPIOPinWrite(MOTOR1_DIR_PORT, MOTOR1_DIR_PIN, motors[MOTOR1].direction);
+	GPIOPinWrite(MOTOR2_DIR_PORT, MOTOR2_DIR_PIN, motors[MOTOR2].direction);
+	GPIOPinWrite(MOTOR3_DIR_PORT, MOTOR3_DIR_PIN, motors[MOTOR3].direction);
+
+	//Start moving all motors up
+	MotorStart(MOTOR1);
+	MotorStart(MOTOR2);
+	MotorStart(MOTOR3);
+
+	// Wait until all limits are pressed
+	while(limit_state != (MOTOR1_LIMIT | MOTOR2_LIMIT | MOTOR3_LIMIT)){
+		limit_state |= LimitsCheck();
+		SystemTick();
+		if(motorState == DISABLED){
+			LogMsg(MOTOR, MESSAGE, "Calibration terminated!");
+			// Maybe put a EEPROM read here to fix local cal_steps
+			uint8_t i;
+			for(i=0; i < NUM_MOTORS; i++){
+				EEPROMRead(&calFlag, EE_ADDR_CALFLAG, sizeof(EE_CALFLAG_SET));
+				if(calFlag == EE_CALFLAG_SET){
+					EEPROMRead((uint32_t *) &motors[i].cal_steps, i * 4, 4);
+				}
+			}
+			return;
+		}
+	}
+
+	for(motor_index = 0; motor_index < NUM_MOTORS; motor_index++){
+		SystemTick();
+		motors[motor_index].cal_steps = motors[motor_index].steps;
+		// Add EEPROM write here to save cal_steps values
+		EEPROMProgram( (uint32_t *)&motors[motor_index].cal_steps, motor_index * 4, 4);
+		LogMsg(MOTOR, MESSAGE, "Calibration value recorded- Motor %d Steps: %d", motor_index + 1, motors[motor_index].cal_steps);
+	}
+	calFlag = EE_CALFLAG_SET;
+	EEPROMProgram(&calFlag, EE_ADDR_CALFLAG, sizeof(calFlag));
+
+	// Do reset routine so that the motors go back to resting state
+	MotorsReset();
+
+	motorState = NORMAL;
+}
+
+enum reset_state {
+	MOVING_TO_LIMITS = 0,
+	MOVING_TO_ZERO
+} reset_state;
+
+/**
+ * 	@brief		Routine to reset the motors back to "resting state"
+ * 				using the calibration values.  This routine will simply
+ * 				return if no calibration values are loaded.  The routine
+ * 				works by bringing all motors up to the limit switch and
+ * 				then moving down the number of steps in the calibration
+ * 				value.  When the limit switch is pressed, the current step
+ * 				count is set to the cal_step value.  Then, the motors will
+ * 				move down until the step count is 0
+ *
+ * 	@param[in]	None
+ * 	@return		None
+ */
+void MotorsReset(void){
+
+	uint8_t motor_index;
+	uint8_t limit_state;
+
+	motorState = RESET;
+	reset_state = MOVING_TO_LIMITS;
+
+	// Make sure that all motors are off and we have calibration values to use
+	for(motor_index = 0; motor_index < NUM_MOTORS; motor_index++){
+		if(motors[motor_index].timerVal != 65536){
+			LogMsg(MOTOR, MESSAGE, "Can't reset, motors are active!");
+			motorState = NORMAL;
+			return;
+		}
+		if(motors[motor_index].cal_steps < 0){
+			LogMsg(MOTOR, MESSAGE, "Can't reset, no calibration values!");
+			motorState = NORMAL;
+			return;
+		}
+	}
+
+	// Set the direction and rate
+	for(motor_index = 0; motor_index < NUM_MOTORS; motor_index++){
+		if(motor_index == MOTOR1){
+			motors[motor_index].direction = DOWN;
+		} else {
+			motors[motor_index].direction = UP;
+		}
+		motors[motor_index].timerVal = RESET_RATE;
+	}
+
+	// Make sure all of the direction pins represent the motor state
+	GPIOPinWrite(MOTOR1_DIR_PORT, MOTOR1_DIR_PIN, motors[MOTOR1].direction);
+	GPIOPinWrite(MOTOR2_DIR_PORT, MOTOR2_DIR_PIN, motors[MOTOR2].direction);
+	GPIOPinWrite(MOTOR3_DIR_PORT, MOTOR3_DIR_PIN, motors[MOTOR3].direction);
+
+	// Check the current limit state
+	limit_state = LimitsCheck();
+
+	if(!(limit_state & MOTOR1_LIMIT)){
+		MotorStart(MOTOR1);
+	}
+
+	if(!(limit_state & MOTOR2_LIMIT)){
+		MotorStart(MOTOR2);
+	}
+
+	if(!(limit_state & MOTOR3_LIMIT)){
+		MotorStart(MOTOR3);
+	}
+
+	// Wait until all limits are pressed
+	while(limit_state != (MOTOR1_LIMIT | MOTOR2_LIMIT | MOTOR3_LIMIT)){
+		limit_state |= LimitsCheck();
+		SystemTick();
+		if(motorState == DISABLED){
+			LogMsg(MOTOR, MESSAGE, "Reset terminated!");
+			return;
+		}
+	}
+
+	reset_state = MOVING_TO_ZERO;
+
+	// Now that all the limits are pressed, reset the current step count
+	for(motor_index = 0; motor_index < NUM_MOTORS; motor_index++){
+		motors[motor_index].steps = motors[motor_index].cal_steps;
+		if(motor_index == MOTOR1){
+			motors[motor_index].direction = UP;
+		} else {
+			motors[motor_index].direction = DOWN;
+		}
+		motors[motor_index].timerVal = RESET_RATE;
+	}
+
+	// Make sure all of the direction pins represent the motor state
+	GPIOPinWrite(MOTOR1_DIR_PORT, MOTOR1_DIR_PIN, motors[MOTOR1].direction);
+	GPIOPinWrite(MOTOR2_DIR_PORT, MOTOR2_DIR_PIN, motors[MOTOR2].direction);
+	GPIOPinWrite(MOTOR3_DIR_PORT, MOTOR3_DIR_PIN, motors[MOTOR3].direction);
+
+	//Start moving all motors down
+	MotorStart(MOTOR1);
+	MotorStart(MOTOR2);
+	MotorStart(MOTOR3);
+
+	/* Wait for the steps to equal 0, since we are in RESET state, the MotorStep
+	 * functions will take care of turning the motors off */
+	while(motors[MOTOR1].steps || motors[MOTOR2].steps || motors[MOTOR3].steps){
+		SystemTick();
+		if(motorState == DISABLED){
+			LogMsg(MOTOR, MESSAGE, "Reset terminated!");
+			return;
+		}
+	}
+
+	motorState = NORMAL;
+}
+
+
+void MotorStart(uint8_t motor_index){
+
+	switch (motor_index){
+		case MOTOR1:
+			TimerLoadSet(TIMER2_BASE, TIMER_A, MIN_PERIOD);
+			TimerEnable(TIMER2_BASE, TIMER_A);
+			break;
+		case MOTOR2:
+			TimerLoadSet(TIMER3_BASE, TIMER_A, MIN_PERIOD);
+			TimerEnable(TIMER3_BASE, TIMER_A);
+			break;
+		case MOTOR3:
+			TimerLoadSet(TIMER4_BASE, TIMER_A, MIN_PERIOD);
+			TimerEnable(TIMER4_BASE, TIMER_A);
+			break;
 	}
 }
 
-void MotorsKillAll(void){
+void MotorStop(uint8_t motor_index){
+
+	if(motor_index < NUM_MOTORS){
+		switch (motor_index){
+			case MOTOR1:
+				TimerDisable(TIMER2_BASE, TIMER_A);
+				TimerLoadSet(TIMER2_BASE, TIMER_A, MIN_PERIOD);
+				break;
+			case MOTOR2:
+				TimerDisable(TIMER3_BASE, TIMER_A);
+				TimerLoadSet(TIMER3_BASE, TIMER_A, MIN_PERIOD);
+				break;
+			case MOTOR3:
+				TimerDisable(TIMER4_BASE, TIMER_A);
+				TimerLoadSet(TIMER4_BASE, TIMER_A, MIN_PERIOD);
+				break;
+		}
+		motors[motor_index].timerVal = 65536;
+	}
+}
+
+void MotorsDisable(void){
 	uint8_t i;
+
 	for(i = 0; i < NUM_MOTORS; i++){
-		motors[i].period = 0;
+		MotorStop(i);
 	}
+	motorState = DISABLED;
+	LogMsg(MOTOR, MESSAGE, "Motors Disabled");
 }
 
-void MotorsUpdate(void){
-	uint8_t i;
-
-	for(i=0; i<NUM_MOTORS; i++){
-		uint32_t currentPeriod = PWMGenPeriodGet(motor_config[i].pwm_base_module, motor_config[i].pwm_generator);
-		if (currentPeriod < motors[i].period)
-		{
-			if(currentPeriod == 1)
-			{
-				//Update the period and make the duty cycle ~50%
-				PWMGenPeriodSet(motor_config[i].pwm_base_module, motor_config[i].pwm_generator, MIN_PERIOD);
-				PWMPulseWidthSet(motor_config[i].pwm_base_module, motor_config[i].pwm_pin, MIN_PERIOD/2);
-				GPIOPinWrite(motor_config[i].dir_port, motor_config[i].dir_pin, motors[i].direction);
-				// Make sure the output is on
-				PWMOutputState(motor_config[i].pwm_base_module, PIN_MASK, 1);
-			}
-		}
-		else if(currentPeriod > motors[i].period){
-			if (motors[i].period == 0){
-				if(NEW_PERIOD_DECREASING > MIN_PERIOD)
-				{
-					PWMGenPeriodSet(motor_config[i].pwm_base_module, motor_config[i].pwm_generator, 1);
-					PWMPulseWidthSet(motor_config[i].pwm_base_module, motor_config[i].pwm_pin, 0);
-					GPIOPinWrite(motor_config[i].dir_port, motor_config[i].dir_pin, motors[i].direction);
-					// Make sure the output is off
-					PWMOutputState(motor_config[i].pwm_base_module, PIN_MASK, 1);
-				}
-				else{
-					PWMGenPeriodSet(motor_config[i].pwm_base_module, motor_config[i].pwm_generator, NEW_PERIOD_INCREASING);
-					PWMPulseWidthSet(motor_config[i].pwm_base_module, motor_config[i].pwm_pin, NEW_PERIOD_INCREASING/2);
-					GPIOPinWrite(motor_config[i].dir_port, motor_config[i].dir_pin, motors[i].direction);
-					// Make sure the output is on
-					PWMOutputState(motor_config[i].pwm_base_module, PIN_MASK, 1);
-				}
-			}
-			else if(NEW_PERIOD_DECREASING <= motors[i].period){
-				PWMGenPeriodSet(motor_config[i].pwm_base_module, motor_config[i].pwm_generator, motors[i].period);
-				PWMPulseWidthSet(motor_config[i].pwm_base_module, motor_config[i].pwm_pin, motors[i].period/2);
-				// Set the direction
-				GPIOPinWrite(motor_config[i].dir_port, motor_config[i].dir_pin, motors[i].direction);
-				// Make sure the output is on
-				PWMOutputState(motor_config[i].pwm_base_module, PIN_MASK, 1);
-			}
-			else{
-				PWMGenPeriodSet(motor_config[i].pwm_base_module, motor_config[i].pwm_generator, NEW_PERIOD_DECREASING);
-				PWMPulseWidthSet(motor_config[i].pwm_base_module, motor_config[i].pwm_pin, NEW_PERIOD_DECREASING/2);
-				// Set the direction
-				GPIOPinWrite(motor_config[i].dir_port, motor_config[i].dir_pin, motors[i].direction);
-				// Make sure the output is on
-				PWMOutputState(motor_config[i].pwm_base_module, PIN_MASK, 1);
-
-			}
-		}
-	}
+void MotorsEnable(void){
+	motorState = NORMAL;
+	LogMsg(MOTOR, MESSAGE, "Motors Enabled");
 }
 
 void Motor1Step(void){
-	GPIOPinWrite(GPIO_PORTC_BASE, GPIO_PIN_7, ~(GPIOPinRead(GPIO_PORTC_BASE, GPIO_PIN_7) & GPIO_PIN_7));
-	PWMGenIntClear(motor_config[0].pwm_base_module, motor_config[0].pwm_generator, PWM_INT_CNT_ZERO);
-	if(GPIOPinRead(motor_config[0].dir_port, motor_config[0].dir_pin) == UP){
-		motors[0].steps++;
+	uint32_t currentTimerVal;
+	uint32_t newTimerVal;
+	// Clear the interrupt
+	TimerIntClear(TIMER2_BASE, TIMER_TIMA_TIMEOUT);
+	// Get the current state of the step pin
+	uint8_t pin_state = GPIOPinRead(MOTOR1_STEP_PORT, MOTOR1_STEP_PIN);
+	// Toggle the pin
+	GPIOPinWrite(MOTOR1_STEP_PORT, MOTOR1_STEP_PIN, ~(pin_state & MOTOR1_STEP_PIN));
+	/* If the pin was off before, then we just turned it on, which
+	 * means we have just stepped, so update the count */
+	if(pin_state == 0x00) {
+		if(!motors[MOTOR1].direction){
+			motors[MOTOR1].steps++;
+		} else {
+			motors[MOTOR1].steps--;
+		}
+	}
+
+	if( (motorState == RESET) && (motors[MOTOR1].steps == 0) && (reset_state == MOVING_TO_ZERO) ){
+		MotorStop(MOTOR1);
+		return;
+	}
+
+	if(pin_state == 0x00) {
+		// Get the previous timer value
+		currentTimerVal = TimerLoadGet(TIMER2_BASE, TIMER_A);
+		// If the current timer value is greater than the desired timerVal, decrease the timer load
+		if(currentTimerVal > motors[MOTOR1].timerVal){
+			newTimerVal = currentTimerVal - motors[MOTOR1].accelRate*currentTimerVal;
+		} else if (currentTimerVal < motors[MOTOR1].timerVal){
+			newTimerVal = currentTimerVal + motors[MOTOR1].deccelRate*currentTimerVal;
+		}
+		else{
+			newTimerVal = currentTimerVal;
+		}
+
+		// As long as the newTimerVal is less than MIN_PERIOD, re-enable the timer with the updated value
+		if(newTimerVal <= MIN_PERIOD){
+			TimerLoadSet(TIMER2_BASE, TIMER_A, newTimerVal);
+			TimerEnable(TIMER2_BASE, TIMER_A);
+		}
 	} else {
-		motors[0].steps--;
+		TimerEnable(TIMER2_BASE, TIMER_A);
 	}
 }
 
 void Motor2Step(void){
-	PWMGenIntClear(motor_config[1].pwm_base_module, motor_config[1].pwm_generator, PWM_INT_CNT_ZERO);
-	if(GPIOPinRead(motor_config[1].dir_port, motor_config[1].dir_pin) == UP){
-		motors[1].steps++;
-	} else {
-		motors[1].steps--;
+	uint32_t currentTimerVal;
+	uint32_t newTimerVal;
+	// Clear the interrupt
+	TimerIntClear(TIMER3_BASE, TIMER_TIMA_TIMEOUT);
+	// Get the current state of the step pin
+	uint8_t pin_state = GPIOPinRead(MOTOR2_STEP_PORT, MOTOR2_STEP_PIN);
+	// Toggle the pin
+	GPIOPinWrite(MOTOR2_STEP_PORT, MOTOR2_STEP_PIN, ~(pin_state & MOTOR2_STEP_PIN));
+	/* If the pin was off before, then we just turned it on, which
+	 * means we have just stepped, so update the count */
+	if(pin_state == 0x00) {
+		if(motors[MOTOR2].direction){
+			motors[MOTOR2].steps++;
+		} else {
+			motors[MOTOR2].steps--;
+		}
 	}
-/*	int i = 5000;
-	while(i--);*/
+
+	if( (motorState == RESET) && (motors[MOTOR2].steps == 0) && (reset_state == MOVING_TO_ZERO) ){
+		MotorStop(MOTOR2);
+		return;
+	}
+
+	if(pin_state == 0x00) {
+		// Get the previous timer value
+		currentTimerVal = TimerLoadGet(TIMER3_BASE, TIMER_A);
+		// If the current timer value is greater than the desired timerVal, decrease the timer load
+		if(currentTimerVal > motors[MOTOR2].timerVal){
+			newTimerVal = currentTimerVal - motors[MOTOR2].accelRate*currentTimerVal;
+		} else if (currentTimerVal < motors[MOTOR2].timerVal){
+			newTimerVal = currentTimerVal + motors[MOTOR2].deccelRate*currentTimerVal;
+		}
+		else{
+			newTimerVal = currentTimerVal;
+		}
+
+		// As long as the newTimerVal is less than MIN_PERIOD, re-enable the timer with the updated value
+		if(newTimerVal <= MIN_PERIOD){
+			TimerLoadSet(TIMER3_BASE, TIMER_A, newTimerVal);
+			TimerEnable(TIMER3_BASE, TIMER_A);
+		}
+	} else {
+		TimerEnable(TIMER3_BASE, TIMER_A);
+	}
 }
+
 void Motor3Step(void){
-	PWMGenIntClear(motor_config[2].pwm_base_module, motor_config[2].pwm_generator, PWM_INT_CNT_ZERO);
-	if(GPIOPinRead(motor_config[2].dir_port, motor_config[2].dir_pin) == UP){
-		motors[2].steps++;
-	} else {
-		motors[2].steps--;
+	uint32_t currentTimerVal;
+	uint32_t newTimerVal;
+	// Clear the interrupt
+	TimerIntClear(TIMER4_BASE, TIMER_TIMA_TIMEOUT);
+	// Get the current state of the step pin
+	uint8_t pin_state = GPIOPinRead(MOTOR3_STEP_PORT, MOTOR3_STEP_PIN);
+	// Toggle the pin
+	GPIOPinWrite(MOTOR3_STEP_PORT, MOTOR3_STEP_PIN, ~(pin_state & MOTOR3_STEP_PIN));
+	/* If the pin was off before, then we just turned it on, which
+	 * means we have just stepped, so update the count */
+	if(pin_state == 0x00) {
+		if(motors[MOTOR3].direction){
+			motors[MOTOR3].steps++;
+		} else {
+			motors[MOTOR3].steps--;
+		}
 	}
-/*	int i = 5000;
-	while(i--);*/
+
+	if( (motorState == RESET) && (motors[MOTOR3].steps == 0) && (reset_state == MOVING_TO_ZERO) ){
+		MotorStop(MOTOR3);
+		return;
+	}
+
+	if(pin_state == 0x00) {
+		// Get the previous timer value
+		currentTimerVal = TimerLoadGet(TIMER4_BASE, TIMER_A);
+		// If the current timer value is greater than the desired timerVal, decrease the timer load
+		if(currentTimerVal > motors[MOTOR3].timerVal){
+			newTimerVal = currentTimerVal - motors[MOTOR3].accelRate*currentTimerVal;
+		} else if (currentTimerVal < motors[MOTOR3].timerVal){
+			newTimerVal = currentTimerVal + motors[MOTOR3].deccelRate*currentTimerVal;
+		}
+		else{
+			newTimerVal = currentTimerVal;
+		}
+
+		// As long as the newTimerVal is less than MIN_PERIOD, re-enable the timer with the updated value
+		if(newTimerVal <= MIN_PERIOD){
+			TimerLoadSet(TIMER4_BASE, TIMER_A, newTimerVal);
+			TimerEnable(TIMER4_BASE, TIMER_A);
+		}
+	} else {
+		TimerEnable(TIMER4_BASE, TIMER_A);
+	}
 }
