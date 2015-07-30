@@ -42,7 +42,7 @@ void MidiInit(void){
 	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOD);
 	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);
 
-	GPIOPinTypeGPIOInput(GPIO_PORTD_BASE, GPIO_PIN_2 | GPIO_PIN_4);
+	GPIOPinTypeGPIOInput(GPIO_PORTD_BASE, GPIO_PIN_2 | GPIO_PIN_3);
 	GPIOPinTypeGPIOInput(GPIO_PORTE_BASE, GPIO_PIN_4 | GPIO_PIN_5);
 }
 
@@ -52,7 +52,6 @@ void MidiChannelUpdate(void){
 	channel.bits.b2 = GPIOPinRead(GPIO_PORTE_BASE, GPIO_PIN_4) >> 4;
 	channel.bits.b3 = GPIOPinRead(GPIO_PORTE_BASE, GPIO_PIN_5) >> 5;
 }
-
 
 void MidiSendMsg(uint8_t *buf, uint8_t length){
 	uint8_t i;
