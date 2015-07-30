@@ -92,6 +92,9 @@ uint8_t LimitsCheck(void){
 	#ifdef LIMITS_VERBOSE
 					LogMsg(LIMITS, MESSAGE, "Soft Upper Limit Reached: Motor %d", motor_index + 1);
 	#endif
+					// We decided that if you hit the soft upper limit, the limit switch is probably not working
+					// Therefore, don't reset and basically leave the system locked out
+//					MotorsReset();
 					return switch_state;
 				}
 
