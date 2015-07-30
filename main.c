@@ -39,6 +39,8 @@ void main (void){
 	MajorInit();
 	LimitsInit();
 
+	DelayMs(2000);
+
 	SubsystemInit(TESLA, MESSAGE, "TESLA", TESLA_VERSION);
 
 	LogMsg(TESLA, MESSAGE, "Tesla System Initialized!");
