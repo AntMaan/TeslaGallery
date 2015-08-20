@@ -139,6 +139,10 @@ void MotorsCalibrate(void){
 	uint8_t limit_state;
 	uint32_t calFlag;
 
+	if(!GPIOPinRead(GPIO_PORTC_BASE, GPIO_PIN_6)){
+		return;
+	}
+
 	motorState = CAL;
 
 	// Make sure that all motors are off
@@ -236,6 +240,10 @@ void MotorsReset(void){
 
 	uint8_t motor_index;
 	uint8_t limit_state;
+
+	if(!GPIOPinRead(GPIO_PORTC_BASE, GPIO_PIN_6)){
+		return;
+	}
 
 	motorState = RESET;
 	reset_state = MOVING_TO_LIMITS;
