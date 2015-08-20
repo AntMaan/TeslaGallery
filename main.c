@@ -14,6 +14,8 @@
 #include "major.h"
 #include "limits.h"
 
+#include <driverlib/eeprom.h>
+
 version_t TESLA_VERSION;
 
 void main (void){
@@ -29,6 +31,9 @@ void main (void){
 	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOD);
 	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);
 	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOF);
+
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_EEPROM0);
+	EEPROMInit();
 
 	TimerInit();
 	TaskInit();
