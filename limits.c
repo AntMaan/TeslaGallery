@@ -81,32 +81,41 @@ uint8_t LimitsCheck(void){
 	}
 
 	if(motorState != RESET){
-		// Check the soft limits
-		for(motor_index = 0; motor_index < NUM_MOTORS; motor_index++){
-			// We can only check soft limits if we have previously calibrated
-			if(motors[motor_index].cal_steps > 0){
-				// Check the soft upper limits
-				if(motors[motor_index].steps >= motors[motor_index].cal_steps + UPPER_LIMIT_OVERSHOOT ){
-					MotorsDisable();
-					DelayMs(100);
-	#ifdef LIMITS_VERBOSE
-					LogMsg(LIMITS, MESSAGE, "Soft Upper Limit Reached: Motor %d", motor_index + 1);
-	#endif
-					// We decided that if you hit the soft upper limit, the limit switch is probably not working
-					// Therefore, don't reset and basically leave the system locked out
-//					MotorsReset();
-					return switch_state;
-				}
 
-				// Check the soft lower limits
-				if(motors[motor_index].steps <= LOWER_LIMIT_OVERSHOOT){
-					MotorsDisable();
-					DelayMs(100);
-	#ifdef LIMITS_VERBOSE
-					LogMsg(LIMITS, MESSAGE, "Soft Lower Limit Reached: Motor %d", motor_index + 1);
-	#endif
-					MotorsReset();
-					return switch_state;
+		// Don't check the soft limits if PC6 is low.  This means that it is a small doll and has no limits
+		if(GPIOPinRead(GPIO_PORTC_BASE, GPIO_PIN_6)){
+			// Check the soft limits
+			for(motor_index = 0; motor_index < NUM_MOTORS; motor_index++){
+				// We can only check soft limits if we have previously calibrated
+				if(motors[motor_index].cal_steps > 0){
+					// Check the soft upper limits
+					if(motors[motor_index].steps >= motors[motor_index].cal_steps + UPPER_LIMIT_OVERSHOOT ){
+						MotorsDisable();
+						DelayMs(100);
+
+						#ifdef LIMITS_VERBOSE
+							LogMsg(LIMITS, MESSAGE, "Soft Upper Limit Reached: Motor %d", motor_index + 1);
+						#endif
+
+						/* We decided that if you hit the soft upper limit, the limit switch is probably not working
+						   Therefore, don't reset and basically leave the system locked out */
+						// MotorsReset();
+
+						return switch_state;
+					}
+
+					// Check the soft lower limits
+					if(motors[motor_index].steps <= LOWER_LIMIT_OVERSHOOT){
+						MotorsDisable();
+						DelayMs(100);
+
+						#ifdef LIMITS_VERBOSE
+							LogMsg(LIMITS, MESSAGE, "Soft Lower Limit Reached: Motor %d", motor_index + 1);
+						#endif
+
+						MotorsReset();
+						return switch_state;
+					}
 				}
 			}
 		}

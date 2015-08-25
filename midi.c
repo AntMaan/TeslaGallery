@@ -8,6 +8,7 @@
 #include "midi.h"
 #include "motor.h"
 #include "subsys.h"
+#include "sensor.h"
 
 #include "inc/hw_memmap.h"
 #include "driverlib/gpio.h"
@@ -18,6 +19,8 @@
 #define y_int 9250
 
 static inline calc_period(char velocity) {return (uint32_t)(velocity*slope + y_int);}
+static inline calc_threshold(char velocity) {return (uint32_t)(MIN_THESHOLD_VALUE + (velocity * (MAX_THRESHOLD_VALUE/127)));}
+static inline calc_timeout(char velocity) {return (tint_t)(velocity << 1);}
 
 typedef struct {
 	char note;
@@ -44,6 +47,9 @@ void MidiInit(void){
 
 	GPIOPinTypeGPIOInput(GPIO_PORTD_BASE, GPIO_PIN_2 | GPIO_PIN_3);
 	GPIOPinTypeGPIOInput(GPIO_PORTE_BASE, GPIO_PIN_4 | GPIO_PIN_5);
+
+	// Input on GPIO PC6 (Active Low) Disables Reset and Calibrate Functionality
+	GPIOPinTypeGPIOInput(GPIO_PORTC_BASE, GPIO_PIN_6);
 }
 
 void MidiChannelUpdate(void){
@@ -188,6 +194,12 @@ void ProcessMidi(char midi_char) {
 							if(motorState == NORMAL){
 								MotorsReset();
 							}
+						case G5:
+							SensorChangeThreshold(calc_threshold(noteEvent.velocity));
+							break;
+						case A5:
+							SensorChangeTimeout(calc_timeout(noteEvent.velocity));
+							break;
 						default:
 							break;
 					}

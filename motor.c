@@ -16,7 +16,6 @@
 #include <driverlib/pwm.h>
 #include <driverlib/sysctl.h>
 #include <driverlib/interrupt.h>
-#include <driverlib/eeprom.h>
 
 #include <inc/hw_gpio.h>
 #include <inc/hw_types.h>
@@ -25,6 +24,7 @@
 #include "timing.h"
 #include "subsys.h"
 #include "limits.h"
+#include "eeprom.h"
 
 version_t MOTOR_VERSION;
 
@@ -34,13 +34,6 @@ motorState_t motorState;
 
 #define CAL_RATE 2500
 #define RESET_RATE 2500
-
-#define EE_ADDR_MOTOR1 0x0000
-#define EE_ADDR_MOTOR2 0x0004
-#define EE_ADDR_MOTOR3 0x0008
-#define EE_ADDR_CALFLAG 0x0064
-
-#define EE_CALFLAG_SET 0xFADE
 
 void MotorsInit(void){
 
@@ -54,7 +47,6 @@ void MotorsInit(void){
 	SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER2);
 	SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER3);
 	SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER4);
-	SysCtlPeripheralEnable(SYSCTL_PERIPH_EEPROM0);
 
 	// Setup our step pins as outputs
 	GPIOPinTypeGPIOOutput(GPIO_PORTA_BASE, GPIO_PIN_7);
@@ -89,8 +81,6 @@ void MotorsInit(void){
 	TimerIntEnable(TIMER2_BASE, TIMER_TIMA_TIMEOUT);
 	TimerIntEnable(TIMER3_BASE, TIMER_TIMA_TIMEOUT);
 	TimerIntEnable(TIMER4_BASE, TIMER_TIMA_TIMEOUT);
-
-	EEPROMInit();
 
 	uint8_t i;
     for(i=0; i < NUM_MOTORS; i++){
@@ -138,6 +128,10 @@ void MotorsCalibrate(void){
 	uint8_t motor_index;
 	uint8_t limit_state;
 	uint32_t calFlag;
+
+	if(!GPIOPinRead(GPIO_PORTC_BASE, GPIO_PIN_6)){
+		return;
+	}
 
 	motorState = CAL;
 
@@ -238,6 +232,10 @@ void MotorsReset(void){
 
 	uint8_t motor_index;
 	uint8_t limit_state;
+
+	if(!GPIOPinRead(GPIO_PORTC_BASE, GPIO_PIN_6)){
+		return;
+	}
 
 	motorState = RESET;
 	reset_state = MOVING_TO_LIMITS;
