@@ -141,6 +141,8 @@ void MotorsCalibrate(void){
 
 	motorState = CAL;
 
+	LogMsg(MOTOR, MESSAGE, "Starting Calibration!");
+
 	// Make sure that all motors are off
 	for(motor_index = 0; motor_index < NUM_MOTORS; motor_index++){
 		if(motors[motor_index].timerVal != 65536){
@@ -326,6 +328,8 @@ void MotorsReset(void){
 			return;
 		}
 	}
+
+	LogMsg(MOTOR, MESSAGE, "Reset Finished!");
 
 	motorState = NORMAL;
 }

@@ -38,7 +38,7 @@ void MidiInit(void){
 	MIDI_VERSION.word = 0x14081000LU;
 	SubsystemInit(MIDI, MESSAGE, "MIDI", MIDI_VERSION);
 
-	//Allow register access to port's
+	//Allow register access to ports
 	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOD);
 	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);
 
@@ -63,8 +63,6 @@ void MidiSendMsg(uint8_t *buf, uint8_t length){
 void ProcessMidi(char midi_char) {
 	static noteEvent_t noteEvent;
 	static uint8_t messageType;
-
-//	LogMsg(MIDI, MESSAGE, "Character Received: 0x%x", midi_char);
 
 	if(midi_char == 0xFE) return;
 
@@ -93,6 +91,7 @@ void ProcessMidi(char midi_char) {
 			midi_msg_state = WAITING_FOR_NOTE;
 			switch(messageType){
 				case NOTE_ON:
+					LogMsg(MIDI, MESSAGE, "Note On Received. Note: %d, Velocity %d", noteEvent.note, noteEvent.velocity);
 					switch(noteEvent.note){
 						case C3:
 							if(motorState == NORMAL){
@@ -194,6 +193,7 @@ void ProcessMidi(char midi_char) {
 					}
 					break;
 			case NOTE_OFF:
+				LogMsg(MIDI, MESSAGE, "Note Off Received. Note: %d, Velocity %d", noteEvent.note, noteEvent.velocity);
 				if(motorState == NORMAL){
 					switch(noteEvent.note){
 						case C3:

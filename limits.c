@@ -38,7 +38,7 @@ void LimitsInit(void){
 	SubsystemInit(LIMITS, MESSAGE, "LIMITS", LIMITS_VERSION);
 
 #ifdef LIMITS_VERBOSE
-		LogMsg(LIMITS, MESSAGE, "System initialized");
+	LogMsg(LIMITS, MESSAGE, "System initialized");
 #endif
 }
 
