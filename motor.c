@@ -97,7 +97,9 @@ void MotorsInit(uint8_t type){
         EEPROMRead(&calFlag, EE_ADDR_CALFLAG, 4);
         if(calFlag == EE_CALFLAG_SET){
         	EEPROMRead((uint32_t *) &motors[i].cal_steps, i * 4, 4);
+        	LogMsg(MOTOR, MESSAGE, "Motor %d Calibration Values Restored: %d", i + 1, motors[i].cal_steps);
         } else {
+        	LogMsg(MOTOR, MESSAGE, "No motor calibration values saved.");
         	motors[i].cal_steps = -1;
         }
     }
@@ -240,6 +242,8 @@ void MotorsReset(void){
 	if(blockReset){
 		return;
 	}
+
+	LogMsg(MOTOR, MESSAGE, "Reset Started!");
 
 	motorState = RESET;
 	reset_state = MOVING_TO_LIMITS;
