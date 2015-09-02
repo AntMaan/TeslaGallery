@@ -16,6 +16,7 @@
 #include <driverlib/pwm.h>
 #include <driverlib/sysctl.h>
 #include <driverlib/interrupt.h>
+#include <driverlib/eeprom.h>
 
 #include <inc/hw_gpio.h>
 #include <inc/hw_types.h>
@@ -29,17 +30,20 @@
 version_t MOTOR_VERSION;
 
 motor_control_t motors[NUM_MOTORS];
+uint8_t blockReset = 0;
 
 motorState_t motorState;
 
 #define CAL_RATE 2500
 #define RESET_RATE 2500
 
-void MotorsInit(void){
+void MotorsInit(uint8_t type){
 
 	uint32_t calFlag;
 
 	MOTOR_VERSION.word = 0x14081000LU;
+
+	blockReset = type;
 
 	motorState = NORMAL;
 
@@ -129,7 +133,7 @@ void MotorsCalibrate(void){
 	uint8_t limit_state;
 	uint32_t calFlag;
 
-	if(!GPIOPinRead(GPIO_PORTC_BASE, GPIO_PIN_6)){
+	if(blockReset){
 		return;
 	}
 
@@ -233,7 +237,7 @@ void MotorsReset(void){
 	uint8_t motor_index;
 	uint8_t limit_state;
 
-	if(!GPIOPinRead(GPIO_PORTC_BASE, GPIO_PIN_6)){
+	if(blockReset){
 		return;
 	}
 

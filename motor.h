@@ -20,7 +20,7 @@
  * NOTE: If a new motor is added to the pwm_motors list, please make
  * 		 it is initialized in this function.
  */
-void MotorsInit(void);
+void MotorsInit(uint8_t type);
 void MotorsUpdate(void);
 void MotorsDisable(void);
 void MotorsEnable(void);

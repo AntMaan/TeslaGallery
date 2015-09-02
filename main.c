@@ -38,13 +38,20 @@ void main (void){
 	TimerInit();
 	TaskInit();
 	SystemInit();
-	MotorsInit();
+
+	// Input on GPIO PC6 (Active Low) Disables Reset and Calibrate Functionality
+	GPIOPadConfigSet(GPIO_PORTC_BASE, GPIO_PIN_6, GPIO_STRENGTH_2MA, GPIO_PIN_TYPE_STD_WPU);
+	GPIOPinTypeGPIOInput(GPIO_PORTC_BASE, GPIO_PIN_6);
+
+	DelayMs(2000);
+
+	uint8_t type = !(GPIOPinRead(GPIO_PORTC_BASE, GPIO_PIN_6) >> 6);
+
+	MotorsInit(type);
 	MidiInit();
 	SensorInit();
 	MajorInit();
-	LimitsInit();
-
-	DelayMs(2000);
+	LimitsInit(type);
 
 	SubsystemInit(TESLA, MESSAGE, "TESLA", TESLA_VERSION);
 

@@ -16,15 +16,19 @@
 
 version_t LIMITS_VERSION;
 
+uint8_t blockLimits = 0;
+
 /**
  * 	@brief		Configure the pins used for inputs of the limit switches.
  *
  * 	@param[in]	None
  * 	@return		None
  */
-void LimitsInit(void){
+void LimitsInit(uint8_t type){
 
 	LIMITS_VERSION.word = 0x14081000LU;
+
+	blockLimits = type;
 
 	// Set the pin type to input for the pins
 	GPIOPinTypeGPIOInput(GPIO_PORTA_BASE, GPIO_PIN_3 | GPIO_PIN_5);
@@ -57,6 +61,10 @@ uint8_t LimitsCheck(void){
 	uint8_t switch_state;
 	uint8_t motor_index;
 
+	if(blockLimits){
+		return 0;
+	}
+
 	switch_state = GPIOPinRead(GPIO_PORTA_BASE, GPIO_PIN_3 | GPIO_PIN_5);
 	switch_state += GPIOPinRead(GPIO_PORTC_BASE, GPIO_PIN_7);
 	switch_state ^= MOTOR1_LIMIT | MOTOR2_LIMIT | MOTOR3_LIMIT;
@@ -81,41 +89,37 @@ uint8_t LimitsCheck(void){
 	}
 
 	if(motorState != RESET){
+		// Check the soft limits
+		for(motor_index = 0; motor_index < NUM_MOTORS; motor_index++){
+			// We can only check soft limits if we have previously calibrated
+			if(motors[motor_index].cal_steps > 0){
+				// Check the soft upper limits
+				if(motors[motor_index].steps >= motors[motor_index].cal_steps + UPPER_LIMIT_OVERSHOOT ){
+					MotorsDisable();
+					DelayMs(100);
 
-		// Don't check the soft limits if PC6 is low.  This means that it is a small doll and has no limits
-		if(GPIOPinRead(GPIO_PORTC_BASE, GPIO_PIN_6)){
-			// Check the soft limits
-			for(motor_index = 0; motor_index < NUM_MOTORS; motor_index++){
-				// We can only check soft limits if we have previously calibrated
-				if(motors[motor_index].cal_steps > 0){
-					// Check the soft upper limits
-					if(motors[motor_index].steps >= motors[motor_index].cal_steps + UPPER_LIMIT_OVERSHOOT ){
-						MotorsDisable();
-						DelayMs(100);
+					#ifdef LIMITS_VERBOSE
+						LogMsg(LIMITS, MESSAGE, "Soft Upper Limit Reached: Motor %d", motor_index + 1);
+					#endif
 
-						#ifdef LIMITS_VERBOSE
-							LogMsg(LIMITS, MESSAGE, "Soft Upper Limit Reached: Motor %d", motor_index + 1);
-						#endif
+					/* We decided that if you hit the soft upper limit, the limit switch is probably not working
+					   Therefore, don't reset and basically leave the system locked out */
+					// MotorsReset();
 
-						/* We decided that if you hit the soft upper limit, the limit switch is probably not working
-						   Therefore, don't reset and basically leave the system locked out */
-						// MotorsReset();
+					return switch_state;
+				}
 
-						return switch_state;
-					}
+				// Check the soft lower limits
+				if(motors[motor_index].steps <= LOWER_LIMIT_OVERSHOOT){
+					MotorsDisable();
+					DelayMs(100);
 
-					// Check the soft lower limits
-					if(motors[motor_index].steps <= LOWER_LIMIT_OVERSHOOT){
-						MotorsDisable();
-						DelayMs(100);
+					#ifdef LIMITS_VERBOSE
+						LogMsg(LIMITS, MESSAGE, "Soft Lower Limit Reached: Motor %d", motor_index + 1);
+					#endif
 
-						#ifdef LIMITS_VERBOSE
-							LogMsg(LIMITS, MESSAGE, "Soft Lower Limit Reached: Motor %d", motor_index + 1);
-						#endif
-
-						MotorsReset();
-						return switch_state;
-					}
+					MotorsReset();
+					return switch_state;
 				}
 			}
 		}

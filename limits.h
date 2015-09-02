@@ -17,7 +17,7 @@
 #define LOWER_LIMIT_OVERSHOOT -1000
 #define UPPER_LIMIT_OVERSHOOT 1000
 
-void LimitsInit(void);
+void LimitsInit(uint8_t type);
 uint8_t LimitsCheck(void);
 
 #endif /* LIMITS_H_ */
