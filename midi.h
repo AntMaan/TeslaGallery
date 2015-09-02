@@ -25,8 +25,8 @@
 #define D5 0x4A
 #define E5 0x4C
 #define F5 0x4D
-#define G5 0x4E
-#define A5 0x4F
+#define G5 0x4F
+#define A5 0x51
 
 #define CHANNEL_0 0x00
 #define CHANNEL_1 0x01

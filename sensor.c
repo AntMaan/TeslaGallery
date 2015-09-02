@@ -15,6 +15,7 @@
 #include "inc/hw_types.h"
 #include "inc/hw_gpio.h"
 #include "inc/hw_memmap.h"
+#include <driverlib/eeprom.h>
 
 #include "subsys.h"
 
@@ -66,16 +67,19 @@ void SensorInit(void){
 	if(sensorSetFlag == EE_SENSOR_SET){
 		EEPROMRead(&sensorTimeout, EE_ADDR_SENSOR_TIMEOUT, sizeof(sensorTimeout));
 		EEPROMRead(&sensorThreshold, EE_ADDR_SENSOR_THRESHOLD, sizeof(sensorThreshold));
+		LogMsg(SENSOR, MESSAGE, "Sensor Timeout Restored : %k seconds", sensorTimeout/1000);
+		LogMsg(SENSOR, MESSAGE, "Sensor Threshold Restored To : %k", sensorThreshold);
 	} else {
 		sensorSetFlag = EE_SENSOR_SET;
 		EEPROMProgram(&sensorTimeout, EE_ADDR_SENSOR_TIMEOUT, sizeof(sensorTimeout));
 		EEPROMProgram(&sensorThreshold, EE_ADDR_SENSOR_THRESHOLD, sizeof(sensorThreshold));
 		EEPROMProgram(&sensorSetFlag, EE_ADDR_SENSOR_SETUP, sizeof(sensorSetFlag));
+		LogMsg(SENSOR, MESSAGE, "No sensor values saved, default values used. Threshold: %k, Timeout: %k", sensorThreshold, sensorTimeout);
 	}
 
 	//Set up the comparator
 	ADCComparatorConfigure(ADC0_BASE, 0, ADC_COMP_TRIG_NONE|ADC_COMP_INT_LOW_HONCE );
-	ADCComparatorRegionSet(ADC0_BASE, 0, threshold - SENSOR_HYST_WINDOW, threshold + SENSOR_HYST_WINDOW);
+	ADCComparatorRegionSet(ADC0_BASE, 0, sensorThreshold - SENSOR_HYST_WINDOW, sensorThreshold + SENSOR_HYST_WINDOW);
 	ADCComparatorReset(ADC0_BASE, 0, true, true);
 	ADCComparatorIntEnable(ADC0_BASE, 0);
 
@@ -87,6 +91,7 @@ void SensorInit(void){
 void SensorChangeTimeout(tint_t timeout){
 	sensorTimeout = timeout;
 	EEPROMProgram(&sensorTimeout, EE_ADDR_SENSOR_TIMEOUT, sizeof(sensorTimeout));
+	LogMsg(SENSOR, MESSAGE, "Sensor Timeout Changed To : %k seconds", sensorTimeout/1000);
 }
 
 void SensorChangeThreshold(uint32_t theshold){
@@ -96,10 +101,11 @@ void SensorChangeThreshold(uint32_t theshold){
 	ADCComparatorReset(ADC0_BASE, 0, true, true);
 	ADCComparatorIntEnable(ADC0_BASE, 0);
 	EEPROMProgram(&sensorThreshold, EE_ADDR_SENSOR_THRESHOLD, sizeof(sensorThreshold));
+	LogMsg(SENSOR, MESSAGE, "Sensor Threshold Changed To : %k", sensorThreshold);
 }
 
 void Sensor1ISR(void){
-	if(TimeSince(lastSensor1Trigger) > TRIGGER_TIMEOUT){
+	if(TimeSince(lastSensor1Trigger) > sensorTimeout){
 		lastSensor1Trigger = TimeNow();
 		Sensor1OutOn();
 		LogMsg(SENSOR, MESSAGE, "Sensor 1 Triggered");
@@ -109,7 +115,7 @@ void Sensor1ISR(void){
 }
 
 void Sensor2ISR(void){
-	if(TimeSince(lastSensor2Trigger) > TRIGGER_TIMEOUT){
+	if(TimeSince(lastSensor2Trigger) > sensorTimeout){
 		lastSensor2Trigger = TimeNow();
 		Sensor2OutOn();
 		TaskScheduleAdd(Sensor2OutOff, TASK_MEDIUM_PRIORITY, 10, 0);
